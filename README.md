@@ -572,6 +572,109 @@ O Qwen3.5-122B-A10B suporta ate 1,010,000 tokens via YaRN. Para habilitar, adici
 
 > Contextos muito longos consomem mais VRAM para KV cache. Comece com 32K e aumente gradualmente.
 
+## Analise de Custos
+
+### Custo Mensal da Infraestrutura
+
+| Componente | Spot $/h | On-Demand $/h | Spot $/mes | On-Demand $/mes |
+|------------|----------|---------------|------------|-----------------|
+| GPU Node (NC96ads_A100_v4, 4x A100) | $3.35 | $14.69 | $2,412 | $10,577 |
+| System Nodes (D4s_v5 x2) | $0.38 | $0.38 | $278 | $278 |
+| APIM (Consumption) | ~$0.01 | ~$0.01 | ~$10 | ~$10 |
+| LoadBalancer + IP | $0.10 | $0.10 | $72 | $72 |
+| **Total** | **$3.84** | **$15.18** | **~$2,762** | **~$10,937** |
+
+> Spot VMs economizam **~75%** no custo total mensal. Precos referencia East US.
+
+### Custo por 1M Tokens (Output)
+
+O custo depende do throughput, que varia com a concorrencia:
+
+| Cenario | Concorrencia | Output tok/s | Spot $/1M tokens | On-Demand $/1M tokens |
+|---------|-------------|-------------|------------------|----------------------|
+| Baixa carga | 1-4 | ~100-200 | $4.65 - $9.30 | $20.42 - $40.83 |
+| **Moderada** | **16-32** | **~600-1000** | **$0.93 - $1.55** | **$4.08 - $6.80** |
+| Alta carga | 64+ | ~1500-2000 | $0.47 - $0.62 | $2.04 - $2.72 |
+| Pico (estimado) | 128+ | ~2500+ | $0.37+ | $1.63+ |
+
+> Em carga moderada a alta, **Qwen3.5-122B-A10B no Spot custa menos de $1 por milhao de tokens**.
+
+### Escalando para 4000 Requisicoes Concorrentes
+
+Assumindo ~100 req concorrentes por node (batch eficiente com vLLM):
+
+| Metrica | Valor |
+|---------|-------|
+| Nodes necessarios | ~40 (NC96ads_A100_v4 Spot) |
+| GPUs totais | 160x A100 80GB |
+| Throughput estimado | ~60,000-80,000 tok/s |
+| **Custo Spot/hora** | **$134** |
+| **Custo Spot/mes** | **~$96,500** |
+| Cost On-Demand/mes | ~$423,000 |
+
+### Comparativo: vLLM on Azure vs APIs Comerciais
+
+```
+  Custo por 1M tokens (output) — escala logaritmica
+
+  GPT-4o              $10.00  ████████████████████████████████████████████  (+1,515%)
+  Claude 3.5 Sonnet   $15.00  ██████████████████████████████████████████████████████████████████  (+2,322%)
+  Claude 3 Opus       $75.00  ████████████████████████████ (fora da escala — 12,000%+)
+  GPT-4o-mini          $0.60  ███
+  DeepSeek V3          $0.89  ████
+  Gemini 1.5 Pro       $5.00  ██████████████████████████
+  ─────────────────────────────────────────────────────
+  vLLM Spot (mod.)     $0.93  █████  ← voce esta aqui
+  vLLM Spot (alta)     $0.47  ██
+  vLLM On-Demand       $4.08  █████████████████████
+```
+
+### Economia vs APIs Comerciais (carga moderada)
+
+| Provedor / Modelo | $/1M output tokens | vs vLLM Spot | Economia |
+|--------------------|-------------------|-------------|----------|
+| **vLLM Spot (este projeto)** | **$0.93** | — | — |
+| GPT-4o-mini | $0.60 | 0.6x | GPT-4o-mini e mais barato* |
+| DeepSeek V3 (API) | $0.89 | ~1x | Similar |
+| Gemini 1.5 Flash | $0.30 | 0.3x | Gemini Flash e mais barato* |
+| **GPT-4o** | **$10.00** | **10.7x** | **vLLM e 10x mais barato** |
+| **Claude 3.5 Sonnet** | **$15.00** | **16.1x** | **vLLM e 16x mais barato** |
+| **Gemini 1.5 Pro** | **$5.00** | **5.4x** | **vLLM e 5x mais barato** |
+| Claude 3 Opus | $75.00 | 80.6x | vLLM e 80x mais barato |
+
+> \* Modelos menores (GPT-4o-mini, Gemini Flash) sao mais baratos por token, mas significativamente menos capazes que o Qwen3.5-122B. A comparacao justa e com modelos frontier (GPT-4o, Claude 3.5 Sonnet, Gemini Pro).
+
+### Quando vLLM Self-Hosted Compensa?
+
+```
+  Break-even vs GPT-4o ($10/1M tokens) — tokens de output por mes
+
+  Volume baixo     < 500K tok/mes     → GPT-4o e mais simples e barato
+  Break-even       ~   1M tok/mes     → custos se equivalem (~$10/mes)
+  Volume medio       10M tok/mes     → vLLM: $9.30  vs GPT-4o: $100
+  Volume alto       100M tok/mes     → vLLM: $93    vs GPT-4o: $1,000
+  Producao          500M tok/mes     → vLLM: $465   vs GPT-4o: $5,000
+  Enterprise          1B tok/mes     → vLLM: $930   vs GPT-4o: $10,000
+
+  ──────────────────────────────────────────────────────────
+  Ponto de virada: ~1M tokens/mes (break-even com GPT-4o)
+  A partir de 10M tokens/mes, self-hosted e >10x mais barato.
+```
+
+### Vantagens Alem do Custo
+
+| Fator | APIs Comerciais | vLLM Self-Hosted |
+|-------|-----------------|------------------|
+| **Privacidade** | Dados enviados ao provedor | Dados ficam na sua infra |
+| **Latencia** | Variavel, shared infra | Previsivel, dedicada |
+| **Rate limits** | Limites do provedor | Voce controla |
+| **Modelo** | O que o provedor oferece | Qualquer modelo open-source |
+| **Contexto** | Limitado pelo provedor | Ate 1M tokens (YaRN) |
+| **Fine-tuning** | Limitado/caro | Total controle |
+| **Vendor lock-in** | Sim | Nao |
+
+> **Resumo**: Para volumes acima de 10M tokens/mes ou quando privacidade e controle sao prioridade, vLLM self-hosted em Azure Spot e significativamente mais economico que APIs comerciais. O break-even com GPT-4o acontece em ~1M tokens/mes.
+
 ## Troubleshooting
 
 ```bash

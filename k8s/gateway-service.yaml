@@ -26,6 +26,7 @@ metadata:
     app.kubernetes.io/part-of: vllm-on-azure
 spec:
   type: LoadBalancer
+  externalTrafficPolicy: Cluster
   ports:
     - port: 80
       targetPort: http
