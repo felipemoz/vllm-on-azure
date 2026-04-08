@@ -1,0 +1,35 @@
+subscription_id   = "00000000-0000-0000-0000-000000000000"
+resource_group_name = "rg-vllm-aks"
+location          = "eastus"
+cluster_name      = "aks-vllm"
+
+# GPU VM size (A100 options):
+#   Standard_NC24ads_A100_v4   -> 1x A100 80GB  (small models < 15B)
+#   Standard_NC48ads_A100_v4   -> 2x A100 80GB  (models 15-30B)
+#   Standard_NC96ads_A100_v4   -> 4x A100 80GB  (models 30-70B)
+#   Standard_ND96asr_v4        -> 8x A100 40GB  (models 70-120B, less VRAM)
+#   Standard_ND96amsr_A100_v4  -> 8x A100 80GB  (Qwen3.5-122B-A10B, recommended)
+gpu_node_vm_size  = "Standard_ND96amsr_A100_v4"
+gpu_node_count    = 1
+gpu_node_max_count = 2
+
+# Spot instances (default: enabled, significantly cheaper than on-demand)
+gpu_spot_enabled         = true
+gpu_spot_max_price       = -1    # -1 = up to on-demand price
+gpu_spot_eviction_policy = "Delete"
+
+# vLLM - Qwen3.5-122B-A10B (MoE: 122B total, 10B active per token)
+# Needs 8 GPUs for tensor parallelism
+# Start with 32K context, increase to 262144 once stable
+vllm_model         = "Qwen/Qwen3.5-122B-A10B"
+vllm_gpu_count     = 8
+vllm_max_model_len = 32768
+vllm_replicas      = 1
+
+# APIM - Public endpoint with API key + rate limiting
+apim_enabled          = true
+apim_name             = "apim-vllm-myproject"  # must be globally unique
+apim_publisher_name   = "vLLM Admin"
+apim_publisher_email  = "admin@example.com"
+apim_rate_limit_calls  = 100   # max calls per period
+apim_rate_limit_period = 60    # period in seconds
